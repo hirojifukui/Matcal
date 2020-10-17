@@ -13,17 +13,19 @@ from werkzeug.utils import secure_filename
 from pyzbar.pyzbar import decode
 import cv2 as cv
 import numpy as np
-from pyzbar.pyzbar import decode
 import pymongo
 from keras.models import model_from_json
 from keras.preprocessing import image
 import json
+from keras.models import load_model
 
-parent_dir = "F:\Google Drive\Pythonapp"
+parent_dir = "F:/Google Drive/Pythonapp/"
 date = "2020-01-01"
 #Restore trained network weight
-model = model_from_json(open('F:/Google Drive/User_Backup/model/cnn_model4.json').read())
-model.load_weights('F:/Google Drive/User_Backup/model/cnn_model_weights4.hdf5')
+#model = model_from_json(open('F:/Google Drive/User_Backup/model/cnn_model4.json').read())
+#model.load_weights('F:/Google Drive/User_Backup/model/cnn_model_weights4.hdf5')
+model = load_model("F:/Google Drive/User_Backup/model/trained_20201015.h5")
+#model_t = load_model("F:/Google Drive/User_Backup/model/tens_digit_20201013.h5")
 path = ""; secure_files = []; form_id =""
 
 @app.route("/")
@@ -226,10 +228,11 @@ def testdate():
         return redirect(url_for('login'))
     form = TestDateForm()
     if form.validate_on_submit():
-        flash('Test Date is set')
         #print ("Files: ", form.testdate.data)
         #print("Currnet_user name", current_user.username)
         date = str(form.testdate.data)
+        msg = "Test Date is " + date
+        flash(msg)
         #path = os.path.join(parent_dir, "uploads", current_user.username, date)
         path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date)
         #print("Path:", path)
@@ -321,11 +324,22 @@ def evaluate_img(path, filename, answer):
     x = np.expand_dims(x, axis=0)
     y_proba = model.predict(x)
     result = y_proba.tolist()
+    #o_proba = model.predict(x)
+    #t_proba = model_t.predict(x)
+    #o_result = o_proba.tolist()
+    #t_result = t_proba.tolist()
+    #t = [model_t.predict_classes(x)[0]][0]
+    #o = [model.predict_classes(x)[0]][0]
+    #num = int(t)*10 + int(o)
+    #ave_predict = (o_result[0][model.predict_classes(x)[0]][0] + t_result[0][model_t.predict_classes(x)[0]][0])/2
+    #ans_ave_pred = (o_result[0][int(answer%10)]+t_result[0][int(answer//10)])/2
     # Evaluation result
     #print(model.predict_classes(x))
     #for i in range(100):
         #print(i, result[0][i])
-    return (model.predict_classes(x)[0], result[0][model.predict_classes(x)[0]], result[0][answer])
+    return (int(model.predict_classes(x)[0]), result[0][model.predict_classes(x)[0]], result[0][answer])
+    #return (num, ave_predict, ans_ave_pred)
+    #return (num, .5, .5)
 
 def write_evaluation (user, date, image, form_id, evaluation):
     myclient = pymongo.MongoClient("mongodb://localhost:27017/")
@@ -339,6 +353,8 @@ def write_evaluation (user, date, image, form_id, evaluation):
         "date": date,
         "image": image,
         "form_id": form_id,
+        "reviewed": False,
+        "mistakes": 0,
         "eval": evaluation}
     x = mycol.update(key, mydict, upsert = True)
     return
@@ -350,7 +366,7 @@ def evaluate_answer(areas, im_out, img, form_id):
         row_h = (area["lower_xy"][1] - area["upper_xy"][1])/area["row"]
         col_w = (area["lower_xy"][0] - area["upper_xy"][0])/area["col"]
         group_result["group"] = area["group"]; group_result["row_h"] = row_h; group_result["col_w"] = col_w
-        group_result["row"] = area["row"]; group_result["col"] = area["col"]
+        group_result["row"] = area["row"]; group_result["col"] = area["col"]; 
         cell_eval = {}
         #print(upper_xy, lower_xy, row, col)
         for row in range(area["row"]):
@@ -375,30 +391,46 @@ def evaluate_answer(areas, im_out, img, form_id):
                 cv.imwrite(path + "/" + filename, cut)
                 #print(row, col, area["answer"][row][col])
                 # Evaluate each cell of image with Keras
-                predict, prob_pred, prob_ans = evaluate_img(path, filename, area["answer"][row][col])
-                pred = predict.item()
+                #predict, prob_pred, prob_ans = evaluate_img(path, filename, area["answer"][row][col])
+                #pred = predict.item()
+                pred, prob_pred, prob_ans = evaluate_img(path, filename, area["answer"][row][col])
+                #print(pred, prob_pred, prob_ans)
+                #pred = predict.item()
                 # Prepare for constructing JSON data
                 cell_eval["row"] = row; cell_eval["col"] = col
                 #cell_eval["upper_x"] = area["upper_xy"][0]; cell_eval["upper_y"] = area["upper_xy"][1]
-                cell_eval["upper_x"] = upperleft_x; cell_eval["upper_y"] = upperleft_y
-                cell_eval["predict"] = pred; cell_eval["prob_pred"] = prob_pred
+                cell_eval["upper_x"] = upperleft_x; cell_eval["upper_y"] = upperleft_y; cell_eval["color"]="blue"
+                cell_eval["predict"] = pred; cell_eval["prob_pred"] = prob_pred; cell_eval["correct"]=False
                 cell_eval["prob_ans"] = prob_ans; cell_eval["answer"] = area["answer"][row][col]; cell_eval["miss_recog"]= False
                 if pred == area["answer"][row][col]:
                     cell_eval["match"] = True
                 else:
                     cell_eval["match"] = False
+                    #print(pred, area["answer"][row][col])
+                    mpath = img[:-4]+"/missed"
+                    if os.path.exists(mpath) == False:
+                        try:
+                            os.makedirs(mpath, exist_ok = True)
+                            print("Directry '%s' created successfully" %mpath)
+                        except OSError as error:
+                            print("Directory 's%' can not be created")   
+                    if area["answer"][row][col] >= 10:
+                        filename = str(row*area["row"] + col) + "-" + str(area["answer"][row][col]) +".jpg"
+                    else:
+                        filename = str(row*area["row"] + col) + "-" + "0" + str(area["answer"][row][col]) +".jpg"
+                    cv.imwrite(mpath + "/" + filename, cut)
                 #print(grp, row, col, pred, prob_pred, prob_ans, area["answer"][row][col])
                 area_result.append(cell_eval); cell_eval = {}; 
         grp += 1
         #eval_result.append(area_result)
-        group_result["eval"] = area_result; area_result = [] 
+        group_result["eval_cells"] = area_result; area_result = [] 
         eval_result.append(group_result); group_result = {}
     #print (eval_result)
     return (eval_result)
 
 def eval_image(img):
     # read image as gray scale
-    #print("img in eval_image ", img)
+    print("img in eval_image ", img)
     frame = cv.imread(img,0)
     # Convert the image to binary iwth cv2.Thresh_OTSU.
     ret2, frame = cv.threshold(frame, 0, 255, cv.THRESH_OTSU)
@@ -427,10 +459,17 @@ def eval_image(img):
             size = (720, 960)
         im_out = cv.warpPerspective(frame, h, size)
         #path = os.path.join(parent_dir, "uploads", current_user.username, date, img[:-4])
+        path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date, img[:-4])
+        if os.path.exists(path) == False:
+            try:
+                os.makedirs(path, exist_ok = True)
+                print("Directry '%s' created successfully" %path)
+            except OSError as error:
+                print("Directory 's%' can not be created") 
         path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date, img[:-4], "adjust.jpg")
         print(path)
         x = cv.imwrite(path, im_out)
-        print(x)
+        #print(x)
         eval_result = evaluate_answer(areas, im_out, img, form_id)
         #evaluation["evaluation"] = eval_result
     else:
@@ -461,10 +500,11 @@ def upload_files():
                 path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date)
                 file.save(os.path.join(path, filename))
                 secure_files.append(filename)
-                msg = "Uploaded: " + filename
-                flash(msg)
+                #msg = "Uploaded: " + filename
+                #flash(msg)
         #print("Secure_Files: ", secure_files)
         for file in secure_files:
+            print("Upload_files' file", file)
             #path = os.path.join(parent_dir, "uploads", current_user.username, date)
             path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date)
             eval_result, path, form_id = eval_image(os.path.join(path, file))
@@ -483,26 +523,34 @@ def read_result (user, date, image):
     mycol = mydb["evaluation"]
     result_id = user + date + image[:-4]
     myquery = {"result_id": result_id}
-    mydoc = mycol.find(myquery,{"_id":0, "result_id": 1, "user": 1, "date": 1, "image": 1, "form_id": 1, "eval": 1})
+    mydoc = mycol.find(myquery,{"_id":0, "result_id": 1, "user": 1, "date": 1, "image": 1, "form_id": 1, "eval": 1,"reviewed": 1, "mistakes": 1})
     evaluation = {}
     for x in mydoc:
         evaluation = x
         continue
     return evaluation
 
-@app.route("/api", methods=['POST'])
-def api():
-    global secure_files, path
-    i = 0
-    req = request.get_json()  
-    if req["action"] == "End":
-        return render_template("public/index.html")
-    elif req["action"] == "JSON":
-        i = 0
-    elif req["action"] == "+" and i <len(secure_files):
-        i += 1
-    elif req["action"] == "-" and i > 1:
-        i -= 1
+def update_result (user, date, image, form_id, data):
+    myclient = pymongo.MongoClient("mongodb://localhost:27017/")
+    mydb = myclient["mydatabase"]
+    mycol = mydb["evaluation"]
+    result_id = user + date + image[:-4]
+    myquery = {"result_id": result_id}
+    newvalues = { "$set" : data}
+    mycol.update_one(myquery, newvalues)
+    return 
+
+def write_review_log (user, date, image, form_id, data):
+    myclient = pymongo.MongoClient("mongodb://localhost:27017/")
+    mydb = myclient["mydatabase"]
+    mycol = mydb["review_log"]
+    result_id = user + date + image[:-4]
+    key = {"result_id": result_id}
+    mydict = data
+    mycol.update(key, mydict, upsert = True)
+    return
+
+def return_page (secure_files, i):
     evaluation = read_result(current_user.username, date, secure_files[i] )
     #print(evaluation)
     #path = os.path.join(parent_dir, "uploads", current_user.username, date)
@@ -512,13 +560,55 @@ def api():
             'total_files': len(secure_files),
             'number_of_file':i,
             'file': secure_files[i],
-            'eval': evaluation
+            'eval': evaluation,
+            'type': "eval"
         }
     with open ("C:/Users/Hiroji/Documents/json.txt","w") as json_file:
         json.dump(return_json, json_file)
     res = make_response(jsonify(return_json), 200) 
-    #return jsonify(ResultSet = json.dumps(return_json))
     return res
+
+def return_endpage (secure_files):
+    res = []
+    for f in secure_files:  
+        evaluation = read_result(current_user.username, date, f )
+        res.append({"image": evaluation["image"],"mistakes": evaluation["mistakes"] })
+    return_json = {
+            'path': "",
+            'total_files': len(secure_files),
+            'number_of_file':i,
+            'file': secure_files[i],
+            'eval': res,
+            'type': "end"
+        }
+    with open ("C:/Users/Hiroji/Documents/json.txt","w") as json_file:
+        json.dump(return_json, json_file)
+    res = make_response(jsonify(return_json), 200) 
+    return res
+
+
+@app.route("/api", methods=['POST'])
+def api():
+    global secure_files, path, i
+
+    req = request.get_json()  
+    #print("Request: ", req["action"], "secure_files: ", secure_files)
+    if req["action"] == "JSON":
+        i = 0
+        res = return_page (secure_files, i)
+    else:
+        write_review_log(current_user.username, date, secure_files[i], req["data"]["form_id"], req["data"])
+        update_result(current_user.username, date, secure_files[i], req["data"]["form_id"], req["data"])
+        if req["action"] == "End":
+            i = 0
+            res = return_endpage (secure_files)
+        elif req["action"] == "+" and i <len(secure_files):
+            i += 1
+            res = return_page (secure_files, i)
+        elif req["action"] == "-" and i > 0:
+            i -= 1
+            res = return_page (secure_files, i)
+    return res        
 
 ## @app.route("/test", methods=['GET', 'POST'])
 ## def test():

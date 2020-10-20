@@ -65,6 +65,7 @@
     function submit_confirm() {
 
         var res = {"action": "JSON"};
+        console.log('files: ', {% files %})
         console.log(`submit confirmation`);
         fetch(`${window.origin}/api`, {
             method: "POST",
@@ -242,7 +243,7 @@
             txt3 = txt3 + "<li>" + data.eval[i]["image"] + ": " + data.eval[i]["mistakes"] + "</li>";
         } 
         action = "JSON"
-        txt3 = txt3 + "</ul></div><a href = \"http://127.0.0.1:5000/\">Go to Home</a><br><div id = \"goback\" onclick=\"button_click('" + action + "')\">Return to Evaluation</div></div>";
+        txt3 = txt3 + "</ul></div><a href = \/home>Go to Home</a><br><div id = \"goback\" onclick=\"button_click('" + action + "')\">Return to Evaluation</div></div>";
         document.getElementById('area').innerHTML = txt3;
         return
     }
@@ -254,7 +255,7 @@
         eval_data["mistakes"]=m;
         var res = {"action": action, "data": eval_data};
         //console.log("action", action, "data", eval_data);
-        fetch(`http://127.0.0.1:5000/api`, {
+        fetch(`/api`, {
         method: "POST",
         credentials: "include",
         body: JSON.stringify(res),

@@ -24,8 +24,10 @@ date = "2020-01-01"
 #Restore trained network weight
 #model = model_from_json(open('F:/Google Drive/User_Backup/model/cnn_model4.json').read())
 #model.load_weights('F:/Google Drive/User_Backup/model/cnn_model_weights4.hdf5')
-model = load_model("F:/Google Drive/User_Backup/model/trained_20201015.h5")
-#model_t = load_model("F:/Google Drive/User_Backup/model/tens_digit_20201013.h5")
+#model = load_model("F:/Google Drive/User_Backup/model/trained_20201016.h5")
+model_t = load_model("cnn/models/tens_digit_20201013.h5")
+model_oo = load_model("cnn/models/one_digitonly_20201017_merged.h5")
+model_o = load_model("cnn/models/ones_digit_20201013.h5")
 path = ""; secure_files = []; form_id =""
 
 @app.route("/")
@@ -312,33 +314,43 @@ def set_marker_location(markerIds, aruco_location, pts_dst):
         i += 1
     return (pts_dst)
 
-def evaluate_img(path, filename, answer):
+def evaluate_img(path, filename, answer, cut):
 
-    #newsize = (45, 25)
-    #img = img.resize(newsize)
+    newsize = (25, 45)
+    img = np.resize(cut, newsize)
     #filename = 'F:/Google Drive/User_Backup/test_data/20_1.png'
     img = image.load_img(path + "/" + filename, color_mode ='grayscale', target_size=(25, 44))
-
+    #print(img)
     x = image.img_to_array(img)
     x /= 255
     x = np.expand_dims(x, axis=0)
-    y_proba = model.predict(x)
-    result = y_proba.tolist()
-    #o_proba = model.predict(x)
-    #t_proba = model_t.predict(x)
-    #o_result = o_proba.tolist()
-    #t_result = t_proba.tolist()
-    #t = [model_t.predict_classes(x)[0]][0]
-    #o = [model.predict_classes(x)[0]][0]
+    #y_proba = model.predict(x)
+    #result = y_proba.tolist()
+    
+    if answer//10 == 0:
+        oo_proba = model_oo.predict(x)
+        oo_result = oo_proba.tolist()
+        oo = model_oo.predict_classes(x)[0]
+        num = int(oo)
+        ans_ave_pred = oo_result[0][answer]
+        ave_predict =oo_result[0][model_oo.predict_classes(x)[0]]
+    else:
+        o_proba = model_o.predict(x)
+        t_proba = model_t.predict(x)
+        o_result = o_proba.tolist()
+        t_result = t_proba.tolist()
+        t = model_t.predict_classes(x)[0]
+        o = model_o.predict_classes(x)[0]
+        num = int(t)*10 + int(o)
     #num = int(t)*10 + int(o)
-    #ave_predict = (o_result[0][model.predict_classes(x)[0]][0] + t_result[0][model_t.predict_classes(x)[0]][0])/2
-    #ans_ave_pred = (o_result[0][int(answer%10)]+t_result[0][int(answer//10)])/2
+        ave_predict = (o_result[0][model_o.predict_classes(x)[0]] + t_result[0][model_t.predict_classes(x)[0]])/2
+        ans_ave_pred = (o_result[0][int(answer%10)]+t_result[0][int(answer//10)])/2
     # Evaluation result
     #print(model.predict_classes(x))
     #for i in range(100):
         #print(i, result[0][i])
-    return (int(model.predict_classes(x)[0]), result[0][model.predict_classes(x)[0]], result[0][answer])
-    #return (num, ave_predict, ans_ave_pred)
+    #return (int(model.predict_classes(x)[0]), result[0][model.predict_classes(x)[0]], result[0][answer])
+    return (num, ave_predict, ans_ave_pred)
     #return (num, .5, .5)
 
 def write_evaluation (user, date, image, form_id, evaluation):
@@ -359,7 +371,7 @@ def write_evaluation (user, date, image, form_id, evaluation):
     x = mycol.update(key, mydict, upsert = True)
     return
 
-def evaluate_answer(areas, im_out, img, form_id):
+def evaluate_answer(areas, im_out, file, form_id):
     grp = 0
     eval_result=[]; area_result = []; group_result = {} 
     for area in areas:
@@ -379,21 +391,23 @@ def evaluate_answer(areas, im_out, img, form_id):
                 cut = im_out[upperleft_y:lowerright_y, upperleft_x:lowerright_x]
                 cut = cv.bitwise_not(cut)
                 filename = str(grp)+str(row)+str(col)+".jpg"
-                #path = os.path.join(parent_dir, "uploads", current_user.username, date, img[:-4])
-                path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date, img[:-4])
-                if os.path.exists(path) == False:
+                #path = os.path.join(parent_dir, "uploads", current_user.username, date, file[:-4])
+                path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date, file[:-4])
+                if os.path.exists(file[:-4]) == False:
                     try:
-                        os.makedirs(path, exist_ok = True)
-                        print("Directry '%s' created successfully" %path)
+                        os.makedirs(file[:-4], exist_ok = True)
+                        print("Directry '%s' created successfully" %file[:-4])
                     except OSError as error:
                         print("Directory 's%' can not be created")    
                 #path = os.path.join(path, filename)    
+                
                 cv.imwrite(path + "/" + filename, cut)
+                
                 #print(row, col, area["answer"][row][col])
                 # Evaluate each cell of image with Keras
                 #predict, prob_pred, prob_ans = evaluate_img(path, filename, area["answer"][row][col])
                 #pred = predict.item()
-                pred, prob_pred, prob_ans = evaluate_img(path, filename, area["answer"][row][col])
+                pred, prob_pred, prob_ans = evaluate_img(path, filename, area["answer"][row][col], cut)
                 #print(pred, prob_pred, prob_ans)
                 #pred = predict.item()
                 # Prepare for constructing JSON data
@@ -407,20 +421,20 @@ def evaluate_answer(areas, im_out, img, form_id):
                 else:
                     cell_eval["match"] = False
                     #print(pred, area["answer"][row][col])
-                    mpath = img[:-4]+"/missed"
-                    if os.path.exists(mpath) == False:
-                        try:
-                            os.makedirs(mpath, exist_ok = True)
-                            print("Directry '%s' created successfully" %mpath)
-                        except OSError as error:
-                            print("Directory 's%' can not be created")   
-                    if area["answer"][row][col] >= 10:
-                        filename = str(row*area["row"] + col) + "-" + str(area["answer"][row][col]) +".jpg"
-                    else:
-                        filename = str(row*area["row"] + col) + "-" + "0" + str(area["answer"][row][col]) +".jpg"
-                    cv.imwrite(mpath + "/" + filename, cut)
+                    #mpath = file[:-4]+"/missed"
+                    #if os.path.exists(mpath) == False:
+                    #    try:
+                    #        os.makedirs(mpath, exist_ok = True)
+                    #        print("Directry '%s' created successfully" %mpath)
+                    #    except OSError as error:
+                    #        print("Directory 's%' can not be created")   
+                    #if area["answer"][row][col] >= 10:
+                    #    filename = str(row*area["row"] + col) + "-" + str(area["answer"][row][col]) +".jpg"
+                    #else:
+                    #    filename = str(row*area["row"] + col) + "-" + "0" + str(area["answer"][row][col]) +".jpg"
+                    #cv.imwrite(mpath + "/" + filename, cut)
                 #print(grp, row, col, pred, prob_pred, prob_ans, area["answer"][row][col])
-                area_result.append(cell_eval); cell_eval = {}; 
+                area_result.append(cell_eval); cell_eval = {}
         grp += 1
         #eval_result.append(area_result)
         group_result["eval_cells"] = area_result; area_result = [] 
@@ -428,15 +442,15 @@ def evaluate_answer(areas, im_out, img, form_id):
     #print (eval_result)
     return (eval_result)
 
-def eval_image(img):
+def eval_image(file_path):
     # read image as gray scale
-    print("img in eval_image ", img)
-    frame = cv.imread(img,0)
+    print("img in eval_image ", file_path)
+    frame = image = cv.imread(file_path,0)
     # Convert the image to binary iwth cv2.Thresh_OTSU.
     ret2, frame = cv.threshold(frame, 0, 255, cv.THRESH_OTSU)
     form_id, markerCorners, markerIds = read_codes(frame)
     aruco_location, areas, layout = read_formdb(form_id)
-    #evaluation = {"user": current_user.username, "image": img, "date": date}
+    #evaluation = {"user": current_user.username, "image": file, "date": date}
     #print(aruco_location)
     if len(markerIds) > 3:
         pts_src, pts_dst = np.zeros((len(markerIds),2)), np.zeros((len(markerIds),2)) 
@@ -457,20 +471,21 @@ def eval_image(img):
             size = (960, 720)
         else:
             size = (720, 960)
-        im_out = cv.warpPerspective(frame, h, size)
-        #path = os.path.join(parent_dir, "uploads", current_user.username, date, img[:-4])
-        path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date, img[:-4])
-        if os.path.exists(path) == False:
+        im_out = cv.warpPerspective(image, h, size)
+        #path = os.path.join(parent_dir, "uploads", current_user.username, date, file[:-4])
+        #path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date, file[:-4])
+        if os.path.exists(file_path[:-4]) == False:
             try:
-                os.makedirs(path, exist_ok = True)
-                print("Directry '%s' created successfully" %path)
+                os.makedirs(file_path[:-4], exist_ok = True)
+                print("Directry '%s' created successfully" %file_path[:-4])
             except OSError as error:
                 print("Directory 's%' can not be created") 
-        path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date, img[:-4], "adjust.jpg")
+        #path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date, file_path[:-4], "adjust.jpg")
+        path = os.path.join(file_path[:-4], "adjust.jpg")
         print(path)
-        x = cv.imwrite(path, im_out)
+        cv.imwrite(path, im_out)
         #print(x)
-        eval_result = evaluate_answer(areas, im_out, img, form_id)
+        eval_result = evaluate_answer(areas, im_out, file_path, form_id)
         #evaluation["evaluation"] = eval_result
     else:
         print("Error: program is not able to detect four or more corner marks")
@@ -496,20 +511,14 @@ def upload_files():
                 flash(msg) 
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
-                path = os.path.join(parent_dir, "uploads", current_user.username, date)
+                #path = os.path.join(parent_dir, "uploads", current_user.username, date)
                 path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date)
                 file.save(os.path.join(path, filename))
+                #print("file ", file)
                 secure_files.append(filename)
-                #msg = "Uploaded: " + filename
-                #flash(msg)
-        #print("Secure_Files: ", secure_files)
         for file in secure_files:
-            print("Upload_files' file", file)
-            #path = os.path.join(parent_dir, "uploads", current_user.username, date)
-            path = os.path.join(app.root_path, 'static/img/upload/', current_user.username, date)
             eval_result, path, form_id = eval_image(os.path.join(path, file))
             write_evaluation (current_user.username, date, file, form_id, eval_result)
-        #    eval_result = eval_image(img)
         return render_template("public/uploaded.html", title="Uploaded", form = form, files = secure_files)
     elif request.method == 'GET':
         return render_template("public/upload_files.html", title="Upload", form = form)
@@ -563,8 +572,8 @@ def return_page (secure_files, i):
             'eval': evaluation,
             'type': "eval"
         }
-    with open ("C:/Users/Hiroji/Documents/json.txt","w") as json_file:
-        json.dump(return_json, json_file)
+    #with open ("C:/Users/Hiroji/Documents/json.txt","w") as json_file:
+    #    json.dump(return_json, json_file)
     res = make_response(jsonify(return_json), 200) 
     return res
 
@@ -581,8 +590,8 @@ def return_endpage (secure_files):
             'eval': res,
             'type': "end"
         }
-    with open ("C:/Users/Hiroji/Documents/json.txt","w") as json_file:
-        json.dump(return_json, json_file)
+    #with open ("C:/Users/Hiroji/Documents/json.txt","w") as json_file:
+    #   json.dump(return_json, json_file)
     res = make_response(jsonify(return_json), 200) 
     return res
 

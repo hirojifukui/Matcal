@@ -1,7 +1,7 @@
 body {
   background: #fafafa;
   color: #333333;
-  margin-top: 5rem;
+  margin-top: 56px;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -26,10 +26,10 @@ h1, h2, h3, h4, h5, h6 {
 
 .content-section {
   background: #ffffff;
-  padding: 0px;
+  padding: 10px;
   border: 1px solid #dddddd;
   border-radius: 3px;
-  margin-top: 35px;
+  margin-top: 20px;
   margin-bottom: 20px;
 }
 
